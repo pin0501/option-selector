@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>選項抽選器</title>
+  <link rel="manifest" href="./manifest.json">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+TC:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #3F51B5;
+      --accent: #F44336;
+      --bg: #F1F3F5;
+      --text: #212121;
+      --surface: #ffffff;
+      --border: #DADCE0;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 40px 16px;
+      font-family: 'IBM Plex Sans TC', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      max-width: 640px;
+      width: 100%;
+      background-color: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.8rem;
+      margin-bottom: 16px;
+      font-weight: 600;
+    }
+    .group {
+      margin-bottom: 32px;
+      position: relative;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+    .group-controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+      justify-content: flex-end;
+    }
+    .group-controls button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 18px;
+      padding: 4px;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    .group-controls button:hover {
+      background: #eee;
+    }
+    .scrollable {
+      min-height: 180px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      background-color: #fafafa;
+    }
+    .option-input-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      background-color: white;
+      border-radius: var(--radius);
+      padding: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .option-input {
+      flex: 1;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: var(--radius);
+    }
+    .option-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(63, 81, 181, 0.2);
+      outline: none;
+    }
+    .remove-btn, .drag-handle {
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+    }
+    .remove-btn { color: var(--accent); }
+    .drag-handle { color: #999; cursor: grab; }
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .btn {
+      padding: 10px 16px;
+      font-size: 15px;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    .btn-add { background-color: var(--primary); color: white; }
+    .btn-choose { background-color: #009688; color: white; }
+    .btn-three { background-color: #FF9800; color: white; }
+    #result {
+      text-align: center;
+      font-size: 20px;
+      margin-top: 20px;
+      font-weight: bold;
+      min-height: 40px;
+    }
+    .loading {
+      text-align: center;
+      margin-top: 12px;
+      font-size: 18px;
+      font-weight: bold;
+      color: #555;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 0.4; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.02); }
+      100% { opacity: 0.4; transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>選項抽選器</h1>
+    <div id="group-container"></div>
+    <div class="buttons">
+      <button class="btn btn-add" onclick="addGroup()">新增群組</button>
+      <button class="btn btn-choose" onclick="chooseFromEachGroup()">每組抽一個</button>
+      <button class="btn btn-three" onclick="chooseOptionThreeTimes()">連抽三次</button>
+    </div>
+    <div class="loading" id="loading" style="display:none">🎲 抽選中，請稍候...</div>
+    <div id="result"></div>
+  </div>
+  <a id="downloadLink" style="display:none"></a>
+  <input type="file" id="importFile" style="display:none" accept="application/json" onchange="handleFileImport(event)">
+  <script>
+    // 程式碼維持原有邏輯，以下調整提升效率與可讀性
+
+    window.onload = () => addGroup();
+
+    function showError(message) {
+      alert('❌ ' + message);
+    }
+
+    function addGroup(options = []) {
+      const groupContainer = document.getElementById('group-container');
+      const group = document.createElement('div');
+      group.className = 'group';
+
+      const scrollable = document.createElement('div');
+      scrollable.className = 'scrollable group-scroll';
+      scrollable.setAttribute('data-group-id', Date.now());
+      group.appendChild(scrollable);
+
+      const controlBox = document.createElement('div');
+      controlBox.className = 'group-controls';
+      controlBox.innerHTML = `
+        <button title="新增選項" onclick="addOption(this.closest('.group').querySelector('.scrollable'))">➕</button>
+        <button title="匯出" onclick="exportGroup(this)">📤</button>
+        <button title="匯入" onclick="triggerImport(this)">📥</button>
+        <button title="刪除群組" onclick="deleteGroup(this)">🗑️</button>
+      `;
+      group.appendChild(controlBox);
+
+      groupContainer.appendChild(group);
+      options.forEach(opt => addOption(scrollable, opt));
+      if (options.length === 0) addOption(scrollable);
+    }
+
+    function deleteGroup(button) {
+      const group = button.closest('.group');
+      if (group) group.remove();
+    }
+
+    function addOption(container, value = "") {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'option-input-container';
+      wrapper.setAttribute('draggable', true);
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'option-input';
+      input.placeholder = `選項${container.querySelectorAll('.option-input-container').length + 1}`;
+      input.value = value;
+
+      const drag = document.createElement('span');
+      drag.className = 'drag-handle';
+      drag.innerText = '☰';
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-btn';
+      removeBtn.innerText = '×';
+      removeBtn.onclick = () => container.removeChild(wrapper);
+
+      wrapper.appendChild(drag);
+      wrapper.appendChild(input);
+      wrapper.appendChild(removeBtn);
+      container.appendChild(wrapper);
+    }
+
+    function chooseFromEachGroup() {
+      const groups = document.querySelectorAll('.group-scroll');
+      const results = [];
+      groups.forEach(group => {
+        const values = [...group.querySelectorAll('.option-input')].map(i => i.value.trim()).filter(Boolean);
+        results.push(values.length ? values[Math.floor(Math.random() * values.length)] : "[空]");
+      });
+      document.getElementById('result').innerText = `各組結果：${results.join(' / ')}`;
+    }
+
+    function chooseOptionThreeTimes() {
+      const groups = document.querySelectorAll('.group-scroll');
+      if (!groups.length) return;
+
+      const loading = document.getElementById('loading');
+      loading.style.display = 'block';
+      const history = [];
+
+      const interval = setInterval(() => {
+        const result = Array.from(groups).map(group => {
+          const values = [...group.querySelectorAll('.option-input')].map(i => i.value.trim()).filter(Boolean);
+          return values.length ? values[Math.floor(Math.random() * values.length)] : "[空]";
+        });
+        history.push(result);
+
+        if (history.length >= 3) {
+          const [a, b, c] = history.slice(-3);
+          if (JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(b) === JSON.stringify(c)) {
+            clearInterval(interval);
+            loading.style.display = 'none';
+            document.getElementById('result').innerText = `三連一致：${c.join(' / ')}`;
+          }
+        }
+      }, 150);
+    }
+
+    function exportGroup(button) {
+      const container = button.closest('.group').querySelector('.group-scroll');
+      const values = [...container.querySelectorAll('.option-input')].map(i => i.value.trim()).filter(Boolean);
+      const blob = new Blob([JSON.stringify(values, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.getElementById('downloadLink');
+      a.href = url;
+      a.download = 'options-group.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+    }
+
+    function triggerImport(button) {
+      document.querySelectorAll('.group-scroll').forEach(el => el.removeAttribute('data-import-target'));
+      const group = button.closest('.group');
+      const scrollable = group.querySelector('.group-scroll');
+      scrollable.setAttribute('data-import-target', 'true');
+      const fileInput = document.getElementById('importFile');
+      fileInput.value = "";
+      fileInput.click();
+    }
+
+    function handleFileImport(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!Array.isArray(data) || data.some(d => typeof d !== "string")) throw new Error("格式錯誤");
+          const target = document.querySelector('.group-scroll[data-import-target="true"]');
+          if (target) {
+            [...target.querySelectorAll('.option-input-container')].forEach(el => el.remove());
+            data.forEach(opt => addOption(target, opt));
+            target.removeAttribute('data-import-target');
+            alert('✅ 匯入成功');
+          } else {
+            showError('找不到匯入目標群組');
+          }
+        } catch (err) {
+          showError('匯入失敗，請確認檔案格式為字串陣列');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = "";
+    }
+  </script>
+</body>
+</html>
